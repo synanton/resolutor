@@ -1,0 +1,36 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/**/build/
+
+# IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.project
+.classpath
+.settings/
+bin/
+out/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs & runtime
+*.log
+logs/
+tmp/
+
+# mdBook output
+docs/book/
+
+# Local overrides
+application-local.yml
+*.env.local
+
+#AI
+.claude/*.json

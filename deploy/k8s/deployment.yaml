@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: resolutor
+  labels:
+    app: resolutor
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: resolutor
+  template:
+    metadata:
+      labels:
+        app: resolutor
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: resolutor
+          image: synanton/resolutor:1.0
+          ports:
+            - containerPort: 8080
+              name: http
+          envFrom:
+            - configMapRef:
+                name: resolutor
+            - secretRef:
+                name: resolutor
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi

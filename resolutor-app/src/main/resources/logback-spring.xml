@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+  <springProperty scope="context" name="appName" source="spring.application.name" defaultValue="resolutor"/>
+
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{ISO8601} [%thread] %-5level %logger{36} correlationId=%X{correlationId:-} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+      <customFields>{"service":"${appName}"}</customFields>
+      <includeMdcKeyName>correlationId</includeMdcKeyName>
+    </encoder>
+  </appender>
+
+  <springProfile name="compose,prod">
+    <root level="INFO">
+      <appender-ref ref="JSON"/>
+    </root>
+  </springProfile>
+
+  <springProfile name="default">
+    <root level="INFO">
+      <appender-ref ref="CONSOLE"/>
+    </root>
+  </springProfile>
+</configuration>

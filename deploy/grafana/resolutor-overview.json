@@ -1,0 +1,148 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Plan build duration",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(resolutor_plan_build_duration_seconds_sum[5m]) / rate(resolutor_plan_build_duration_seconds_count[5m])",
+          "legendFormat": "mean compile time",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "title": "Tasks by state",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "resolutor_tasks_state",
+          "legendFormat": "{{state}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "title": "Plan parallelism factor",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "resolutor_plan_parallelism",
+          "legendFormat": "parallelism",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "title": "Resource-graph calls",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(resolutor_resource_graph_calls_total[5m])",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 5,
+      "title": "Compile vs dispatch (observations)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(resolutor_plan_compile_seconds_sum[5m]) / rate(resolutor_plan_compile_seconds_count[5m])",
+          "legendFormat": "compile",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(resolutor_plan_dispatch_seconds_sum[5m]) / rate(resolutor_plan_dispatch_seconds_count[5m])",
+          "legendFormat": "dispatch",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 6,
+      "title": "Colouring (chromatic / waves / intra)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "resolutor_plan_chromatic_number",
+          "legendFormat": "chromatic",
+          "refId": "A"
+        },
+        {
+          "expr": "resolutor_plan_wave_count",
+          "legendFormat": "waves",
+          "refId": "B"
+        },
+        {
+          "expr": "resolutor_plan_intra_component_parallelism",
+          "legendFormat": "intra",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "id": 7,
+      "title": "Estimated vs actual plan duration",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "resolutor_plan_estimated_duration_millis",
+          "legendFormat": "estimated",
+          "refId": "A"
+        },
+        {
+          "expr": "resolutor_plan_actual_duration_millis",
+          "legendFormat": "actual",
+          "refId": "B"
+        }
+      ]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "tags": ["resolutor"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Resolutor overview",
+  "uid": "resolutor-overview",
+  "version": 1
+}

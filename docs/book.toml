@@ -1,0 +1,21 @@
+[book]
+title = "Resolutor Developer Documentation"
+authors = ["Synanton"]
+description = "API reference and development guide for Resolutor, including speech-analysis tag recalculation examples."
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+git-repository-url = "https://github.com/andreminin/resolutor"
+default-theme = "navy"
+preferred-dark-theme = "navy"
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.search]
+enable = true

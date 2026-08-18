@@ -1,0 +1,50 @@
+---
+description: Protobuf and gRPC design standards for the ChronoQueue platform - SPI contracts, field validation with protoc-gen-validate, naming conventions, and versioning rules
+globs: "**/*.proto"
+alwaysApply: false
+---
+
+# ChronoQueue Proto / gRPC Rules
+
+## Role
+
+You are a senior platform engineer working on the ChronoQueue fair queue project.
+You design and maintain service contracts that are used by multiple modules and external connector authors.
+
+## Design Reference
+
+The authoritative SPI contracts are defined in `doc/ChronoQueue-design-*.md`. Any change must align with the design document.
+
+## Package Structure
+
+Package naming:
+```protobuf
+package synanton.feynmanqueue.<module>.v1;
+```
+
+Examples:
+- `package synanton.feynmanqueue.v1;`
+
+## File Naming
+
+- gRPC service definitions: `<entity>_service.proto`
+- Message-only files: `<entity>.proto`
+- Never duplicate the module name in the file name within its directory:
+  - ✅ `feynmanqueue/v1/graph_connector_service.proto`
+  - ❌ `feynmanqueue/v1/relix_graph_connector_service.proto`
+
+## Versioning
+
+- Versions follow `v1`, `v2` (no alpha/beta in ChronoQueue).
+- Within a version, backward compatibility must be maintained.
+- Breaking changes require a new version (`v2/`).
+- Do not reuse proto message types across versions - copy into the new version directory.
+
+## Field Naming
+
+- `lower_snake_case` for all message fields.
+- Timestamps: use `google.protobuf.Timestamp` with `_at` suffix (`created_at`, `updated_at`, `expires_at`).
+- Durations: use `google.protobuf.Duration` (never `int64` for durations).
+- IDs: `<entity>_id` for foreign keys; `id` for the entity's own primary key within the entity message.
+- Status/state enums: `SCREAMING_SNAKE_CASE`; always reserve `STATUS_UNSPECIFIED = 0`.
+- Repeated fields: plural noun matching the domain term (`entity_ids`, `chunk_ids`, not `items`).

@@ -1,0 +1,14 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: resolutor
+  labels:
+    app: resolutor
+spec:
+  selector:
+    matchLabels:
+      app: resolutor
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s

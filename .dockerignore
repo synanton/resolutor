@@ -1,0 +1,11 @@
+# Build
+.gradle
+**/build
+.git
+.idea
+*.iml
+.cursor
+docs
+perf
+deploy
+*.md

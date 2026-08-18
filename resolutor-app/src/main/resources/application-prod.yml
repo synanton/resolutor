@@ -1,0 +1,8 @@
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+resolutor:
+  planner:
+    tick-interval: PT1S
+    batch-size: 200

@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: resolutor
+data:
+  SPRING_PROFILES_ACTIVE: prod
+  SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/resolutor
+  SPRING_DATASOURCE_USERNAME: resolutor
+  RESOLUTOR_RESOURCEGRAPH_ENDPOINT: http://resource-graph/resources

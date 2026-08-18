@@ -1,0 +1,80 @@
+spring:
+  application:
+    name: resolutor
+  threads:
+    virtual:
+      enabled: true
+  main:
+    banner-mode: "off"
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/resolutor}
+    username: ${SPRING_DATASOURCE_USERNAME:resolutor}
+    password: ${SPRING_DATASOURCE_PASSWORD:resolutor}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+
+resolutor:
+  planner:
+    tick-interval: PT1S
+    batch-size: 100
+    order-policy: FIFO
+    max-bucket-size: 10000
+    planner-version: v4
+    colouring: true
+    locality: true
+    cost: true
+    backpressure-reorder: true
+    default-task-duration: PT0.1S
+  dispatch:
+    mode: in-process
+    max-concurrent-groups: 0
+    task-timeout: PT5M
+    lock-at-most: PT10M
+  kafka:
+    groups-topic: resolutor.plan.groups
+  backpressure:
+    enabled: true
+    defaults:
+      max-inflight-messages: 1000000
+      max-emission-rate-per-hour: 500000
+  resource-graph:
+    endpoint: http://localhost:9000/resources
+    timeout: PT2S
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      resource-graph:
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: PT30S
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+      plan-dispatch-kafka:
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: PT30S
+        sliding-window-size: 20
+        minimum-number-of-calls: 5
