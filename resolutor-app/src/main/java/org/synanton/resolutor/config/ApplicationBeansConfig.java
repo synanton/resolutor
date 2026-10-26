@@ -9,6 +9,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.synanton.resolutor.adapter.metrics.MicrometerMetricsPort;
 import org.synanton.resolutor.application.backpressure.BackpressureConfig;
 import org.synanton.resolutor.application.backpressure.BackpressureManager;
@@ -130,6 +131,7 @@ public class ApplicationBeansConfig {
   }
 
   @Bean
+  @Primary
   @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
       name = "resolutor.dispatch.mode",
       havingValue = "in-process",

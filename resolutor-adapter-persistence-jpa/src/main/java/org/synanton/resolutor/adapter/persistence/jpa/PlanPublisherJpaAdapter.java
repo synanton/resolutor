@@ -12,7 +12,7 @@ import org.synanton.resolutor.domain.plan.PlanId;
  * JPA-backed {@link PlanPublisherPort}. Appends to {@code execution_plans} and mirrors the latest
  * row in {@code execution_plan_latest}.
  */
-public final class PlanPublisherJpaAdapter implements PlanPublisherPort {
+public class PlanPublisherJpaAdapter implements PlanPublisherPort {
 
   private final ExecutionPlanLatestJpaRepository latestRepo;
   private final ExecutionPlanJpaRepository historyRepo;
