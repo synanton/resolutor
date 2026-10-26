@@ -14,7 +14,7 @@ build/
 .classpath
 .settings/
 bin/
-out/
+/out/
 
 # OS
 .DS_Store
