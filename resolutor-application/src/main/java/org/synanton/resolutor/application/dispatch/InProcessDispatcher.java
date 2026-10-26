@@ -227,8 +227,12 @@ public final class InProcessDispatcher implements DispatcherPort, AutoCloseable 
     taskRepo.save(started);
     backpressure.onEmitted(task.topResource().resourceClass());
 
-    Instant deadline = Instant.now().plus(config.taskTimeout());
     Instant execStart = Instant.now();
+    Instant configuredDeadline = execStart.plus(config.taskTimeout());
+    Instant deadline =
+        taskDeadline == null || configuredDeadline.isBefore(taskDeadline)
+            ? configuredDeadline
+            : taskDeadline;
     TaskWorker.Result result;
     try {
       result = worker.execute(started);
@@ -241,7 +245,7 @@ public final class InProcessDispatcher implements DispatcherPort, AutoCloseable 
     }
     recordDuration(task, execStart);
 
-    boolean deadlineExceeded = Instant.now().isAfter(deadline);
+    boolean deadlineExceeded = !Instant.now().isBefore(deadline);
     Task finalTask;
     TaskResult wire;
     switch (result.outcome()) {
