@@ -2,6 +2,7 @@ package org.synanton.resolutor.application.port.out;
 
 import java.util.List;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 import org.synanton.resolutor.domain.plan.ExecutionPlan;
 import org.synanton.resolutor.domain.plan.SequentialGroup;
 import org.synanton.resolutor.domain.task.TaskId;
@@ -22,7 +23,7 @@ public interface DispatcherPort {
   }
 
   /** Result for an individual dispatched task. */
-  record TaskResult(TaskId taskId, boolean success, String failureReason) {
+  record TaskResult(TaskId taskId, boolean success, @Nullable String failureReason) {
     public static TaskResult ok(TaskId taskId) {
       return new TaskResult(taskId, true, null);
     }
