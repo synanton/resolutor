@@ -168,13 +168,13 @@ class InProcessDispatcherTest {
             null,
             TaskState.PENDING,
             Instant.now(),
-            Instant.now().plusMillis(10),
+            Instant.now().plusMillis(200),
             0L);
     taskRepo.save(expiring);
     TaskWorker slowWorker =
         task -> {
           try {
-            Thread.sleep(40);
+            Thread.sleep(250);
           } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(e);
@@ -190,7 +190,8 @@ class InProcessDispatcherTest {
             new NoOpMetricsPort(),
             new DispatchConfig(0, Duration.ofSeconds(1)));
 
-    GroupResult result = dispatcher.dispatch(new SequentialGroup("c-deadline", List.of(expiring.id())));
+    GroupResult result =
+        dispatcher.dispatch(new SequentialGroup("c-deadline", List.of(expiring.id())));
 
     assertThat(result.taskResults().get(0).success()).isFalse();
     assertThat(result.taskResults().get(0).failureReason()).contains("exceeded deadline");
