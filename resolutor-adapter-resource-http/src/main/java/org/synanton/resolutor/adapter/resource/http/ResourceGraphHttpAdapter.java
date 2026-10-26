@@ -21,7 +21,7 @@ import org.synanton.resolutor.domain.task.Task;
  * <p>When the circuit is open or the call fails, {@link #fallback(Task, Throwable)} throws so the
  * planner skips the task instead of compiling a truncated footprint.
  */
-public final class ResourceGraphHttpAdapter implements ResourceGraphPort {
+public class ResourceGraphHttpAdapter implements ResourceGraphPort {
 
   private static final System.Logger LOG =
       System.getLogger(ResourceGraphHttpAdapter.class.getName());
