@@ -26,8 +26,8 @@ public interface TaskWorker {
       return new Result(Outcome.COMPLETED, null, null);
     }
 
-    public static Result paused(Cursor cursor) {
-      return new Result(Outcome.PAUSED, Objects.requireNonNull(cursor, "cursor"), null);
+    public static Result paused(@Nullable Cursor cursor) {
+      return new Result(Outcome.PAUSED, cursor, null);
     }
 
     public static Result failed(String reason) {
