@@ -25,18 +25,13 @@ public interface DispatcherPort {
     }
   }
 
-  /** Result for an individual dispatched task. */
   /** Outcome of dispatching one task. */
   record TaskResult(TaskId taskId, boolean success, @Nullable String failureReason) {
-    public static TaskResult ok(TaskId taskId) {
-      return new TaskResult(taskId, true, null);
 
     public TaskResult {
       Objects.requireNonNull(taskId, "taskId");
     }
 
-    public static TaskResult failed(TaskId taskId, String reason) {
-      return new TaskResult(taskId, false, Objects.requireNonNull(reason, "reason"));
     /** Mark {@code id} as dispatched successfully. */
     public static TaskResult ok(TaskId id) {
       return new TaskResult(id, true, null);
