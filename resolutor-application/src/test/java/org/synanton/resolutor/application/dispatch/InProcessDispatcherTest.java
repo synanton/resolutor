@@ -157,6 +157,50 @@ class InProcessDispatcherTest {
   }
 
   @Test
+  void executionExceedingTaskDeadlineIsMarkedTimeout() {
+    Task expiring =
+        new Task(
+            TaskId.generate(),
+            Resource.of("project", "deadline"),
+            Set.of(),
+            "{}",
+            "{}",
+            null,
+            TaskState.PENDING,
+            Instant.now(),
+            Instant.now().plusMillis(10),
+            0L);
+    taskRepo.save(expiring);
+    TaskWorker slowWorker =
+        task -> {
+          try {
+            Thread.sleep(40);
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+          }
+          return TaskWorker.Result.completed();
+        };
+    dispatcher.close();
+    dispatcher =
+        new InProcessDispatcher(
+            taskRepo,
+            slowWorker,
+            backpressure,
+            new NoOpMetricsPort(),
+            new DispatchConfig(0, Duration.ofSeconds(1)));
+
+    GroupResult result = dispatcher.dispatch(new SequentialGroup("c-deadline", List.of(expiring.id())));
+
+    assertThat(result.taskResults().get(0).success()).isFalse();
+    assertThat(result.taskResults().get(0).failureReason()).contains("exceeded deadline");
+    assertThat(taskRepo.findById(expiring.id()))
+        .get()
+        .extracting(Task::state)
+        .isEqualTo(TaskState.TIMEOUT);
+  }
+
+  @Test
   void sameWaveRunsConcurrently() {
     Task a = pending("project", "1");
     Task b = pending("project", "2");
