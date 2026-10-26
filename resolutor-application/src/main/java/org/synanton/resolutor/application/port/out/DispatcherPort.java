@@ -2,7 +2,6 @@ package org.synanton.resolutor.application.port.out;
 
 import java.util.List;
 import java.util.Objects;
-import org.jspecify.annotations.Nullable;
 import org.synanton.resolutor.domain.plan.ExecutionPlan;
 import org.synanton.resolutor.domain.plan.SequentialGroup;
 import org.synanton.resolutor.domain.task.TaskId;
