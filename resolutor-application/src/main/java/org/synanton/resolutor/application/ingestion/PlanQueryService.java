@@ -69,6 +69,10 @@ public final class PlanQueryService implements PlanQueryPort {
               cmd.timeoutAt(),
               0L));
     }
-    return planner.compile(tasks);
+    try {
+      return planner.compile(tasks);
+    } finally {
+      planner.releaseAllReservations();
+    }
   }
 }

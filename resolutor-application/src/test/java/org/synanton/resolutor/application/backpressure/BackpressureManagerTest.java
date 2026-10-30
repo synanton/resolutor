@@ -3,6 +3,10 @@ package org.synanton.resolutor.application.backpressure;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class BackpressureManagerTest {
@@ -97,5 +101,95 @@ class BackpressureManagerTest {
     mgr.onEmitted("special");
     assertThat(mgr.admit("special")).isFalse();
     assertThat(mgr.admit(CLASS)).isTrue();
+  }
+
+  @Test
+  void admitReservesCapacityAcrossBatch() {
+    BackpressureConfig config = new BackpressureConfig(true, 2L, Long.MAX_VALUE, Map.of());
+    BackpressureManager mgr = new BackpressureManager(config);
+
+    // A batch of tasks in the same class cannot oversubscribe the in-flight limit.
+    assertThat(mgr.admit(CLASS)).isTrue();
+    assertThat(mgr.admit(CLASS)).isTrue();
+    assertThat(mgr.admit(CLASS)).isFalse();
+    assertThat(mgr.reservedEstimate(CLASS)).isEqualTo(2);
+  }
+
+  @Test
+  void onEmittedConvertsReservationToInflight() {
+    BackpressureConfig config = new BackpressureConfig(true, 1L, Long.MAX_VALUE, Map.of());
+    BackpressureManager mgr = new BackpressureManager(config);
+
+    assertThat(mgr.admit(CLASS)).isTrue();
+    assertThat(mgr.reservedEstimate(CLASS)).isEqualTo(1);
+
+    mgr.onEmitted(CLASS);
+    // Reservation is consumed; the slot is now real in-flight usage.
+    assertThat(mgr.reservedEstimate(CLASS)).isZero();
+    assertThat(mgr.admit(CLASS)).isFalse();
+
+    mgr.onCompleted(CLASS);
+    assertThat(mgr.admit(CLASS)).isTrue();
+  }
+
+  @Test
+  void releaseAllReservationsReturnsSlots() {
+    BackpressureConfig config = new BackpressureConfig(true, 1L, Long.MAX_VALUE, Map.of());
+    BackpressureManager mgr = new BackpressureManager(config);
+
+    assertThat(mgr.admit(CLASS)).isTrue();
+    assertThat(mgr.admit(CLASS)).isFalse();
+
+    mgr.releaseAllReservations();
+    assertThat(mgr.admit(CLASS)).isTrue();
+  }
+
+  @Test
+  void releaseReturnsSingleReservation() {
+    BackpressureConfig config = new BackpressureConfig(true, 2L, Long.MAX_VALUE, Map.of());
+    BackpressureManager mgr = new BackpressureManager(config);
+
+    assertThat(mgr.admit(CLASS)).isTrue();
+    assertThat(mgr.admit(CLASS)).isTrue();
+    assertThat(mgr.admit(CLASS)).isFalse();
+
+    mgr.release(CLASS);
+    assertThat(mgr.reservedEstimate(CLASS)).isEqualTo(1);
+    assertThat(mgr.admit(CLASS)).isTrue();
+  }
+
+  @Test
+  void concurrentAdmissionNeverOversubscribes() throws Exception {
+    BackpressureConfig config = new BackpressureConfig(true, 10L, Long.MAX_VALUE, Map.of());
+    BackpressureManager mgr = new BackpressureManager(config);
+
+    int threads = 8;
+    int attemptsPerThread = 100;
+    AtomicInteger admitted = new AtomicInteger();
+    ExecutorService pool = Executors.newFixedThreadPool(threads);
+    try {
+      java.util.List<java.util.concurrent.Future<?>> futures = new java.util.ArrayList<>();
+      for (int t = 0; t < threads; t++) {
+        futures.add(
+            pool.submit(
+                () -> {
+                  for (int i = 0; i < attemptsPerThread; i++) {
+                    if (mgr.admit(CLASS)) {
+                      admitted.incrementAndGet();
+                    }
+                  }
+                }));
+      }
+      pool.shutdown();
+      assertThat(pool.awaitTermination(30, TimeUnit.SECONDS)).isTrue();
+      for (java.util.concurrent.Future<?> future : futures) {
+        future.get();
+      }
+    } finally {
+      pool.shutdownNow();
+    }
+
+    assertThat(admitted.get()).isEqualTo(10);
+    assertThat(mgr.reservedEstimate(CLASS)).isEqualTo(10);
   }
 }

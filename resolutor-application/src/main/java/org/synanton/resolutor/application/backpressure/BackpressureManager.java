@@ -18,12 +18,21 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>On leadership acquisition, call {@link #reconstructFromDb(Map)} to seed in-flight counts from
  * the database before the first planning cycle. The ring buffers are reset on restart (documented
  * acceptable loss per docs/design.md Appendix A).
+ *
+ * <p>Admission is a two-phase reservation: {@link #admit(String)} atomically reserves an in-flight
+ * slot (and a rate slot) at planning time so a whole batch cannot oversubscribe a class, and {@link
+ * #onEmitted(String)} converts a reservation into real in-flight usage when dispatch actually
+ * starts the task. Call {@link #releaseAllReservations()} once a planning cycle (or a dry-run
+ * simulation) ends to return any slots that were never turned into dispatched work.
  */
 public final class BackpressureManager {
 
   private final BackpressureConfig config;
   private final ConcurrentHashMap<String, AtomicLong> inflightByClass = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, RingBuffer> rateByClass = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, AtomicLong> reservedByClass = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, AtomicLong> rateReservedByClass =
+      new ConcurrentHashMap<>();
 
   public BackpressureManager(BackpressureConfig config) {
     this.config = Objects.requireNonNull(config, "config");
@@ -34,25 +43,56 @@ public final class BackpressureManager {
   }
 
   /**
-   * Returns {@code true} if the task may proceed. Checks in-flight count and hourly emission rate.
-   * Does NOT modify any counters - call {@link #onEmitted} when the task is actually dispatched.
+   * Atomically reserve an in-flight slot (and a rate slot) for {@code resourceClass}, returning
+   * {@code false} when the class is already at its in-flight or emission-rate limit. The
+   * reservation is converted into real in-flight usage by {@link #onEmitted(String)} or returned
+   * via {@link #releaseAllReservations()}.
    */
   public boolean admit(String resourceClass) {
     if (!config.enabled()) {
       return true;
     }
-    long inflight = inflightFor(resourceClass).get();
-    if (inflight >= config.maxInflight(resourceClass)) {
-      return false;
+    long maxInflight = config.maxInflight(resourceClass);
+    long maxRate = config.maxRatePerHour(resourceClass);
+    AtomicLong reserved = reservedFor(resourceClass);
+    AtomicLong inflight = inflightFor(resourceClass);
+    while (true) {
+      long current = reserved.get();
+      if (inflight.get() + current >= maxInflight) {
+        return false;
+      }
+      if (rateFor(resourceClass).sum() + rateReservedFor(resourceClass).get() >= maxRate) {
+        return false;
+      }
+      if (reserved.compareAndSet(current, current + 1)) {
+        rateReservedFor(resourceClass).incrementAndGet();
+        return true;
+      }
     }
-    long rate = rateFor(resourceClass).sum();
-    return rate < config.maxRatePerHour(resourceClass);
   }
 
-  /** Increment in-flight counter and emission rate for {@code resourceClass}. */
+  /**
+   * Convert a planning-time reservation into real in-flight usage. When no reservation exists for
+   * the class (e.g. tasks dispatched directly, outside planning), it simply counts the emission.
+   */
   public void onEmitted(String resourceClass) {
     inflightFor(resourceClass).incrementAndGet();
     rateFor(resourceClass).increment(System.currentTimeMillis());
+    consumeReservation(resourceClass);
+  }
+
+  /** Return a single planning-time reservation for {@code resourceClass} without emitting work. */
+  public void release(String resourceClass) {
+    consumeReservation(resourceClass);
+  }
+
+  /**
+   * Drop every outstanding planning-time reservation. Called at the end of a planning cycle (or
+   * dry-run simulation) so tasks that were planned but never dispatched do not leak capacity.
+   */
+  public void releaseAllReservations() {
+    reservedByClass.clear();
+    rateReservedByClass.clear();
   }
 
   /** Decrement in-flight counter when a task completes (or fails / times out). */
@@ -75,6 +115,8 @@ public final class BackpressureManager {
   public void reconstructFromDb(Map<String, Long> inflightByResourceClass) {
     inflightByClass.clear();
     rateByClass.clear();
+    reservedByClass.clear();
+    rateReservedByClass.clear();
     long nowMs = System.currentTimeMillis();
     inflightByResourceClass.forEach(
         (cls, count) -> {
@@ -107,6 +149,12 @@ public final class BackpressureManager {
     return buffer == null ? 0L : buffer.sum();
   }
 
+  /** Number of planning-time reservations currently held for {@code resourceClass}. */
+  public long reservedEstimate(String resourceClass) {
+    AtomicLong counter = reservedByClass.get(resourceClass);
+    return counter == null ? 0L : counter.get();
+  }
+
   /** Resource classes that have been observed by admit/emit/reconstruct. */
   public Set<String> trackedClasses() {
     return Set.copyOf(inflightByClass.keySet());
@@ -120,5 +168,24 @@ public final class BackpressureManager {
 
   private RingBuffer rateFor(String cls) {
     return rateByClass.computeIfAbsent(cls, k -> new RingBuffer(System.currentTimeMillis()));
+  }
+
+  private AtomicLong reservedFor(String cls) {
+    return reservedByClass.computeIfAbsent(cls, k -> new AtomicLong(0));
+  }
+
+  private AtomicLong rateReservedFor(String cls) {
+    return rateReservedByClass.computeIfAbsent(cls, k -> new AtomicLong(0));
+  }
+
+  private void consumeReservation(String cls) {
+    AtomicLong reserved = reservedByClass.get(cls);
+    if (reserved != null) {
+      reserved.updateAndGet(v -> Math.max(0, v - 1));
+    }
+    AtomicLong rateReserved = rateReservedByClass.get(cls);
+    if (rateReserved != null) {
+      rateReserved.updateAndGet(v -> Math.max(0, v - 1));
+    }
   }
 }

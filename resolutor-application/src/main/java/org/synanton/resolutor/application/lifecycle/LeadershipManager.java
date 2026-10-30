@@ -80,17 +80,21 @@ public final class LeadershipManager {
           reconstructIfNeeded();
           timeoutReaper.run(Instant.now(clock));
           List<Task> batch = taskRepo.loadBatchForPlanning(plannerConfig.batchSize());
-          ExecutionPlan plan = metrics.observe("plan.compile", () -> planner.compile(batch));
-          planPublisher.publish(plan);
-          metrics.recordPlanBuilt(plan.metrics(), plan.planningDuration());
-          LOG.log(
-              System.Logger.Level.INFO,
-              "Planning cycle complete: {0} groups, {1} tasks, id={2}",
-              plan.groups().size(),
-              plan.metrics().totalTasks(),
-              plan.id());
-          dispatchIfNeeded(plan);
-          return plan;
+          try {
+            ExecutionPlan plan = metrics.observe("plan.compile", () -> planner.compile(batch));
+            planPublisher.publish(plan);
+            metrics.recordPlanBuilt(plan.metrics(), plan.planningDuration());
+            LOG.log(
+                System.Logger.Level.INFO,
+                "Planning cycle complete: {0} groups, {1} tasks, id={2}",
+                plan.groups().size(),
+                plan.metrics().totalTasks(),
+                plan.id());
+            dispatchIfNeeded(plan);
+            return plan;
+          } finally {
+            backpressure.releaseAllReservations();
+          }
         });
   }
 

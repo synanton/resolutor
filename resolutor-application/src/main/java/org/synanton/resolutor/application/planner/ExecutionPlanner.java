@@ -239,7 +239,8 @@ public final class ExecutionPlanner {
         continue;
       }
       boolean allAdmitted = true;
-      Map<String, Long> classCounts = new HashMap<>();
+      Map<String, Long> reserved = new HashMap<>();
+      java.util.Set<String> involved = new java.util.LinkedHashSet<>();
       for (TaskId tid : component) {
         Task t = taskIndex.get(tid);
         if (t == null) {
@@ -247,8 +248,10 @@ public final class ExecutionPlanner {
           break;
         }
         String cls = t.topResource().resourceClass();
-        classCounts.merge(cls, 1L, Long::sum);
-        if (!backpressureManager.admit(cls)) {
+        involved.add(cls);
+        if (backpressureManager.admit(cls)) {
+          reserved.merge(cls, 1L, Long::sum);
+        } else {
           allAdmitted = false;
           break;
         }
@@ -256,16 +259,29 @@ public final class ExecutionPlanner {
       if (allAdmitted) {
         admitted.add(component);
       } else {
-        classCounts
-            .keySet()
-            .forEach(
-                cls -> {
-                  backpressureManager.recordDenied(cls);
-                  metrics.recordBackpressureDenied(cls);
-                });
+        reserved.forEach(
+            (cls, count) -> {
+              for (long i = 0; i < count; i++) {
+                backpressureManager.release(cls);
+              }
+            });
+        involved.forEach(
+            cls -> {
+              backpressureManager.recordDenied(cls);
+              metrics.recordBackpressureDenied(cls);
+            });
       }
     }
     return admitted;
+  }
+
+  /**
+   * Release any planning-time backpressure reservations left after a compile that was never
+   * dispatched (e.g. a dry-run {@code simulate}). Dispatch consumes reservations automatically via
+   * {@link BackpressureManager#onEmitted}.
+   */
+  public void releaseAllReservations() {
+    backpressureManager.releaseAllReservations();
   }
 
   private static boolean isTimeout(Throwable ex) {

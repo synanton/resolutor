@@ -73,14 +73,16 @@ These approaches have fundamental drawbacks:
 
 | Issue              | Runtime Locking                  | Resolutor Planning                               |
 | ------------------ | -------------------------------- | ---------------------------------------------- |
-| **Threads block**  | Yes – waiting wastes CPU.        | No – no locks acquired during execution.       |
-| **Deadlocks**      | Possible – complex ordering.     | Impossible – no locks.                         |
-| **Retry storms**   | Common – failures cause backoff. | None – conflicts serialised deterministically. |
+| **Threads block**  | Yes – waiting wastes CPU.        | No – no per-resource locks acquired during execution. |
+| **Deadlocks**      | Possible – complex ordering.     | No scheduling deadlocks within the plan.       |
+| **Retry storms**   | Common – failures cause backoff. | No lock retries – conflicts serialised deterministically. |
 | **Contention**     | Throughput drops sharply.        | Throughput scales with independent components. |
 | **Predictability** | Non‑deterministic order.         | Fully specified in the `ExecutionPlan`.        |
 | **Diagnostics**    | Hard to observe contention.      | Plan is inspectable, reproducible, analysable. |
 
 Resolutor achieves this by **knowing all conflicts before execution** and **serialising only what is necessary**. This is analogous to compile‑time vs. runtime optimisation: traditional locking is like interpreting code line by line; planning is like  compiling the entire program before running it.
+
+> **Scope of the guarantee.** Resolutor removes the need for per-resource *runtime scheduling locks* within its own execution model. It does **not** eliminate locking in the wider system: the database still uses transaction isolation, leadership coordination still uses a distributed lease, and application-level consistency, idempotency and transactional correctness remain the host application's responsibility. Planning also prevents conflicts only insofar as the resolved resource footprints are complete and stay valid for the duration of execution.
 
 ------
 
