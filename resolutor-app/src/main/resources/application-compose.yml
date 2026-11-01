@@ -5,5 +5,7 @@ spring:
     password: resolutor
 
 resolutor:
+  worker:
+    noop-enabled: true
   planner:
     tick-interval: PT0.5S

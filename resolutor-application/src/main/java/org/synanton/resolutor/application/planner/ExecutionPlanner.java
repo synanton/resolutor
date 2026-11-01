@@ -21,6 +21,7 @@ import java.util.function.ToDoubleFunction;
 import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
 import org.synanton.resolutor.application.backpressure.BackpressureManager;
+import org.synanton.resolutor.application.backpressure.BackpressureManager.ReservationScope;
 import org.synanton.resolutor.application.planner.pass.ExecutionPlanPass;
 import org.synanton.resolutor.application.planner.pass.ExecutionPlanPass.PassState;
 import org.synanton.resolutor.application.port.out.MetricsPort;
@@ -148,7 +149,8 @@ public final class ExecutionPlanner {
 
     Map<TaskId, Task> taskIndex =
         resolved.stream().collect(Collectors.toMap(Task::id, Function.identity()));
-    List<Set<TaskId>> admitted = filterByBackpressure(state.components(), taskIndex);
+    ReservationScope scope = backpressureManager.newScope();
+    List<Set<TaskId>> admitted = filterByBackpressure(scope, state.components(), taskIndex);
 
     Duration elapsed = Duration.between(start, Instant.now());
     @Nullable ToDoubleFunction<Task> pressure =
@@ -212,7 +214,7 @@ public final class ExecutionPlanner {
   }
 
   private List<Set<TaskId>> filterByBackpressure(
-      List<Set<TaskId>> components, Map<TaskId, Task> taskIndex) {
+      ReservationScope scope, List<Set<TaskId>> components, Map<TaskId, Task> taskIndex) {
     if (!backpressureManager.isEnabled()) {
       return components;
     }
@@ -226,7 +228,7 @@ public final class ExecutionPlanner {
             continue;
           }
           String cls = t.topResource().resourceClass();
-          if (backpressureManager.admit(cls)) {
+          if (backpressureManager.admit(scope, cls)) {
             kept.add(tid);
           } else {
             backpressureManager.recordDenied(cls);
@@ -249,7 +251,7 @@ public final class ExecutionPlanner {
         }
         String cls = t.topResource().resourceClass();
         involved.add(cls);
-        if (backpressureManager.admit(cls)) {
+        if (backpressureManager.admit(scope, cls)) {
           reserved.merge(cls, 1L, Long::sum);
         } else {
           allAdmitted = false;
@@ -262,7 +264,7 @@ public final class ExecutionPlanner {
         reserved.forEach(
             (cls, count) -> {
               for (long i = 0; i < count; i++) {
-                backpressureManager.release(cls);
+                backpressureManager.release(scope, cls);
               }
             });
         involved.forEach(
@@ -273,15 +275,6 @@ public final class ExecutionPlanner {
       }
     }
     return admitted;
-  }
-
-  /**
-   * Release any planning-time backpressure reservations left after a compile that was never
-   * dispatched (e.g. a dry-run {@code simulate}). Dispatch consumes reservations automatically via
-   * {@link BackpressureManager#onEmitted}.
-   */
-  public void releaseAllReservations() {
-    backpressureManager.releaseAllReservations();
   }
 
   private static boolean isTimeout(Throwable ex) {

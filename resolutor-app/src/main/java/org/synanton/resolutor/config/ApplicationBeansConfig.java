@@ -5,12 +5,12 @@ import io.micrometer.observation.ObservationRegistry;
 import java.time.Clock;
 import java.util.HashMap;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
-import org.springframework.context.annotation.Profile;
 import org.synanton.resolutor.adapter.metrics.MicrometerMetricsPort;
 import org.synanton.resolutor.application.backpressure.BackpressureConfig;
 import org.synanton.resolutor.application.backpressure.BackpressureManager;
@@ -39,7 +39,6 @@ import org.synanton.resolutor.domain.policy.DeadlinePolicy;
 import org.synanton.resolutor.domain.policy.FifoPolicy;
 import org.synanton.resolutor.domain.policy.OrderingPolicy;
 import org.synanton.resolutor.domain.policy.PriorityPolicy;
-import org.synanton.resolutor.domain.task.Task;
 
 /** Composition root - wires the application services and their dependencies. */
 @Configuration
@@ -110,12 +109,21 @@ public class ApplicationBeansConfig {
 
   @Bean
   @ConditionalOnMissingBean
-  @Profile("!prod")
-  TaskWorker taskWorker() {
-    // No-op worker for development/demo only: it lets a fresh install boot without a plugged-in
-    // workload. It is disabled under the `prod` profile so that a production deployment that
-    // forgets to provide a real worker fails fast at startup instead of silently completing tasks.
-    return (Task task) -> TaskWorker.Result.completed();
+  TaskWorker taskWorker(@Value("${resolutor.worker.noop-enabled:false}") boolean noopEnabled) {
+    // Fallback worker. Only an explicit opt-in (resolutor.worker.noop-enabled=true, e.g. the
+    // `compose` dev profile) provides a no-op worker. Any other deployment that forgets to provide
+    // a real TaskWorker fails fast at startup instead of silently completing tasks.
+    return fallbackTaskWorker(noopEnabled);
+  }
+
+  static TaskWorker fallbackTaskWorker(boolean noopEnabled) {
+    if (!noopEnabled) {
+      throw new IllegalStateException(
+          "No TaskWorker bean was configured and resolutor.worker.noop-enabled is not true. "
+              + "Provide a real TaskWorker implementation (or opt in to the no-op worker for "
+              + "development) before starting.");
+    }
+    return task -> TaskWorker.Result.completed();
   }
 
   @Bean

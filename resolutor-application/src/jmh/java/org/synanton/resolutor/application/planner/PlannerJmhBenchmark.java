@@ -87,9 +87,10 @@ public class PlannerJmhBenchmark {
 
   @Benchmark
   public long admitThroughput() {
+    var scope = backpressure.newScope();
     long admitted = 0;
     for (Task task : tasks) {
-      if (backpressure.admit(task.topResource().resourceClass())) {
+      if (backpressure.admit(scope, task.topResource().resourceClass())) {
         admitted++;
       }
     }

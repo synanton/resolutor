@@ -64,7 +64,7 @@ class TaskTimeoutReaperTest {
     Task orphan = task(TaskState.STARTED, null, null);
     taskRepo.save(orphan);
     backpressure.onEmitted("project");
-    assertThat(backpressure.admit("project")).isFalse();
+    assertThat(backpressure.admit(backpressure.newScope(), "project")).isFalse();
 
     TaskTimeoutReaper.Result result = reaper.run(NOW);
 
@@ -73,7 +73,7 @@ class TaskTimeoutReaperTest {
         .get()
         .extracting(Task::state)
         .isEqualTo(TaskState.PENDING);
-    assertThat(backpressure.admit("project")).isTrue();
+    assertThat(backpressure.admit(backpressure.newScope(), "project")).isTrue();
   }
 
   @Test
@@ -94,7 +94,7 @@ class TaskTimeoutReaperTest {
     Task expired = task(TaskState.STARTED, NOW.minusSeconds(1), null);
     taskRepo.save(expired);
     backpressure.onEmitted("project");
-    assertThat(backpressure.admit("project")).isFalse();
+    assertThat(backpressure.admit(backpressure.newScope(), "project")).isFalse();
 
     reaper.run(NOW);
 
@@ -102,7 +102,7 @@ class TaskTimeoutReaperTest {
         .get()
         .extracting(Task::state)
         .isEqualTo(TaskState.TIMEOUT);
-    assertThat(backpressure.admit("project")).isTrue();
+    assertThat(backpressure.admit(backpressure.newScope(), "project")).isTrue();
   }
 
   private static Task task(TaskState state, Instant timeoutAt, Cursor cursor) {
