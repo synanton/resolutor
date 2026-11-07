@@ -35,7 +35,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * <p>The upstream resource-graph service is stubbed via a Spring bean so we don't need to run a
  * WireMock server; this keeps the test focused on Resolutor's own runtime plumbing.
  */
-@SpringBootTest
+@SpringBootTest(properties = "resolutor.worker.noop-enabled=true")
 @Testcontainers(disabledWithoutDocker = true)
 class EndToEndIntegrationTest {
 

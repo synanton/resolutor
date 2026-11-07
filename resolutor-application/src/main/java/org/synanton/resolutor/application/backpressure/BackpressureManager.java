@@ -19,20 +19,26 @@ import java.util.concurrent.atomic.AtomicLong;
  * the database before the first planning cycle. The ring buffers are reset on restart (documented
  * acceptable loss per docs/design.md Appendix A).
  *
- * <p>Admission is a two-phase reservation: {@link #admit(String)} atomically reserves an in-flight
- * slot (and a rate slot) at planning time so a whole batch cannot oversubscribe a class, and {@link
- * #onEmitted(String)} converts a reservation into real in-flight usage when dispatch actually
- * starts the task. Call {@link #releaseAllReservations()} once a planning cycle (or a dry-run
- * simulation) ends to return any slots that were never turned into dispatched work.
+ * <p>Admission is scoped to a single planning operation. A {@link ReservationScope} accumulates the
+ * in-flight and rate slots reserved while one plan is being compiled, so a whole batch cannot
+ * oversubscribe a class and concurrent operations (for example a scheduled cycle and a dry-run
+ * {@code simulate}) cannot release each other's reservations. The scope is discarded when the
+ * operation ends; real in-flight usage is still tracked by {@link #onEmitted} / {@link
+ * #onCompleted}.
+ *
+ * <p><b>Limitation (asynchronous dispatch).</b> Reservations guard the synchronous in-process
+ * dispatcher, which consumes them by incrementing in-flight usage during the same planning cycle.
+ * The Kafka dispatcher only publishes a plan and returns before consumers start the tasks, so
+ * reservations are not retained until durable scheduling/execution. Correct capacity accounting for
+ * asynchronous delivery depends on the broader Kafka delivery/acknowledgement lifecycle and is
+ * deferred.
  */
 public final class BackpressureManager {
 
   private final BackpressureConfig config;
   private final ConcurrentHashMap<String, AtomicLong> inflightByClass = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, RingBuffer> rateByClass = new ConcurrentHashMap<>();
-  private final ConcurrentHashMap<String, AtomicLong> reservedByClass = new ConcurrentHashMap<>();
-  private final ConcurrentHashMap<String, AtomicLong> rateReservedByClass =
-      new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, Object> locksByClass = new ConcurrentHashMap<>();
 
   public BackpressureManager(BackpressureConfig config) {
     this.config = Objects.requireNonNull(config, "config");
@@ -42,64 +48,62 @@ public final class BackpressureManager {
     return config.enabled();
   }
 
+  /** Begin a new, isolated reservation scope for a single planning operation. */
+  public ReservationScope newScope() {
+    return new ReservationScope();
+  }
+
   /**
-   * Atomically reserve an in-flight slot (and a rate slot) for {@code resourceClass}, returning
-   * {@code false} when the class is already at its in-flight or emission-rate limit. The
-   * reservation is converted into real in-flight usage by {@link #onEmitted(String)} or returned
-   * via {@link #releaseAllReservations()}.
+   * Atomically reserve an in-flight slot (and a rate slot) for {@code resourceClass} in {@code
+   * scope}, returning {@code false} when the class is already at its in-flight or emission-rate
+   * limit. The in-flight check compares the class's actual in-flight count plus the reservations
+   * already held by {@code scope}; the rate check does the same for the emission-rate window. The
+   * whole check-and-reserve runs under a per-class lock so concurrent admissions cannot exceed the
+   * limit.
    */
-  public boolean admit(String resourceClass) {
+  public boolean admit(ReservationScope scope, String resourceClass) {
+    Objects.requireNonNull(scope, "scope");
     if (!config.enabled()) {
       return true;
     }
-    long maxInflight = config.maxInflight(resourceClass);
-    long maxRate = config.maxRatePerHour(resourceClass);
-    AtomicLong reserved = reservedFor(resourceClass);
-    AtomicLong inflight = inflightFor(resourceClass);
-    while (true) {
-      long current = reserved.get();
-      if (inflight.get() + current >= maxInflight) {
+    synchronized (lockFor(resourceClass)) {
+      long inflight = inflightFor(resourceClass).get();
+      if (inflight + scope.reserved(resourceClass) >= config.maxInflight(resourceClass)) {
         return false;
       }
-      if (rateFor(resourceClass).sum() + rateReservedFor(resourceClass).get() >= maxRate) {
+      long rate = rateFor(resourceClass).sum() + scope.rateReserved(resourceClass);
+      if (rate >= config.maxRatePerHour(resourceClass)) {
         return false;
       }
-      if (reserved.compareAndSet(current, current + 1)) {
-        rateReservedFor(resourceClass).incrementAndGet();
-        return true;
-      }
+      scope.reserve(resourceClass);
+      return true;
     }
   }
 
   /**
-   * Convert a planning-time reservation into real in-flight usage. When no reservation exists for
-   * the class (e.g. tasks dispatched directly, outside planning), it simply counts the emission.
+   * Return a single planning-time reservation for {@code resourceClass} held by {@code scope},
+   * without dispatching any work. Used to roll back a component that failed admission partway.
    */
+  public void release(ReservationScope scope, String resourceClass) {
+    Objects.requireNonNull(scope, "scope");
+    scope.release(resourceClass);
+  }
+
+  /** Record that a task for {@code resourceClass} has actually been dispatched. */
   public void onEmitted(String resourceClass) {
-    inflightFor(resourceClass).incrementAndGet();
-    rateFor(resourceClass).increment(System.currentTimeMillis());
-    consumeReservation(resourceClass);
-  }
-
-  /** Return a single planning-time reservation for {@code resourceClass} without emitting work. */
-  public void release(String resourceClass) {
-    consumeReservation(resourceClass);
-  }
-
-  /**
-   * Drop every outstanding planning-time reservation. Called at the end of a planning cycle (or
-   * dry-run simulation) so tasks that were planned but never dispatched do not leak capacity.
-   */
-  public void releaseAllReservations() {
-    reservedByClass.clear();
-    rateReservedByClass.clear();
+    synchronized (lockFor(resourceClass)) {
+      inflightFor(resourceClass).incrementAndGet();
+      rateFor(resourceClass).increment(System.currentTimeMillis());
+    }
   }
 
   /** Decrement in-flight counter when a task completes (or fails / times out). */
   public void onCompleted(String resourceClass) {
-    AtomicLong counter = inflightByClass.get(resourceClass);
-    if (counter != null) {
-      counter.updateAndGet(v -> Math.max(0, v - 1));
+    synchronized (lockFor(resourceClass)) {
+      AtomicLong counter = inflightByClass.get(resourceClass);
+      if (counter != null) {
+        counter.updateAndGet(v -> Math.max(0, v - 1));
+      }
     }
   }
 
@@ -115,8 +119,6 @@ public final class BackpressureManager {
   public void reconstructFromDb(Map<String, Long> inflightByResourceClass) {
     inflightByClass.clear();
     rateByClass.clear();
-    reservedByClass.clear();
-    rateReservedByClass.clear();
     long nowMs = System.currentTimeMillis();
     inflightByResourceClass.forEach(
         (cls, count) -> {
@@ -149,18 +151,16 @@ public final class BackpressureManager {
     return buffer == null ? 0L : buffer.sum();
   }
 
-  /** Number of planning-time reservations currently held for {@code resourceClass}. */
-  public long reservedEstimate(String resourceClass) {
-    AtomicLong counter = reservedByClass.get(resourceClass);
-    return counter == null ? 0L : counter.get();
-  }
-
   /** Resource classes that have been observed by admit/emit/reconstruct. */
   public Set<String> trackedClasses() {
     return Set.copyOf(inflightByClass.keySet());
   }
 
   // ── private helpers ───────────────────────────────────────────────────────
+
+  private Object lockFor(String cls) {
+    return locksByClass.computeIfAbsent(cls, k -> new Object());
+  }
 
   private AtomicLong inflightFor(String cls) {
     return inflightByClass.computeIfAbsent(cls, k -> new AtomicLong(0));
@@ -170,22 +170,40 @@ public final class BackpressureManager {
     return rateByClass.computeIfAbsent(cls, k -> new RingBuffer(System.currentTimeMillis()));
   }
 
-  private AtomicLong reservedFor(String cls) {
-    return reservedByClass.computeIfAbsent(cls, k -> new AtomicLong(0));
-  }
+  /**
+   * Planning-time reservations held by a single planning operation. Counters are scoped to the
+   * operation: releasing or discarding one scope never affects another scope's reservations.
+   */
+  public static final class ReservationScope {
 
-  private AtomicLong rateReservedFor(String cls) {
-    return rateReservedByClass.computeIfAbsent(cls, k -> new AtomicLong(0));
-  }
+    private final ConcurrentHashMap<String, AtomicLong> reservedByClass = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, AtomicLong> rateReservedByClass =
+        new ConcurrentHashMap<>();
 
-  private void consumeReservation(String cls) {
-    AtomicLong reserved = reservedByClass.get(cls);
-    if (reserved != null) {
-      reserved.updateAndGet(v -> Math.max(0, v - 1));
+    long reserved(String resourceClass) {
+      AtomicLong counter = reservedByClass.get(resourceClass);
+      return counter == null ? 0L : counter.get();
     }
-    AtomicLong rateReserved = rateReservedByClass.get(cls);
-    if (rateReserved != null) {
-      rateReserved.updateAndGet(v -> Math.max(0, v - 1));
+
+    long rateReserved(String resourceClass) {
+      AtomicLong counter = rateReservedByClass.get(resourceClass);
+      return counter == null ? 0L : counter.get();
+    }
+
+    void reserve(String resourceClass) {
+      reservedByClass.computeIfAbsent(resourceClass, k -> new AtomicLong()).incrementAndGet();
+      rateReservedByClass.computeIfAbsent(resourceClass, k -> new AtomicLong()).incrementAndGet();
+    }
+
+    void release(String resourceClass) {
+      AtomicLong reserved = reservedByClass.get(resourceClass);
+      if (reserved != null) {
+        reserved.updateAndGet(v -> Math.max(0, v - 1));
+      }
+      AtomicLong rateReserved = rateReservedByClass.get(resourceClass);
+      if (rateReserved != null) {
+        rateReserved.updateAndGet(v -> Math.max(0, v - 1));
+      }
     }
   }
 }
